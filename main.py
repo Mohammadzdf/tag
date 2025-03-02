@@ -1,14 +1,18 @@
 import configparser
 import asyncio
+import threading
+from flask import Flask
 from telethon import TelegramClient, events
 
+# خواندن اطلاعات از فایل config.ini
 config = configparser.ConfigParser()
 config.read('config.ini')
 
-api_id = config['telegram']['api_id']
+api_id = int(config['telegram']['api_id'])  # مقدار را به عدد تبدیل می‌کنیم
 api_hash = config['telegram']['api_hash']
 phone_number = config['telegram']['phone_number']
 
+# متغیرهای ربات
 last_reply = {}
 bot_messages = {}
 admins = set()
@@ -16,15 +20,18 @@ rtag_active = {}
 group_messages = {}
 join_text = "👋 جوین شو!"  # متن پیش‌فرض برای ریپلای
 
+# راه‌اندازی کلاینت Telethon
 client = TelegramClient('session_name', api_id, api_hash)
 
 async def fetch_previous_messages(group_id):
+    """دریافت پیام‌های قبلی گروه"""
     group_messages[group_id] = []
     async for message in client.iter_messages(group_id, limit=500):
         group_messages[group_id].append(message)
 
 @client.on(events.NewMessage(incoming=True))
 async def store_messages(event):
+    """ذخیره پیام‌های جدید در گروه"""
     group_id = event.chat_id
     if group_id not in group_messages:
         group_messages[group_id] = []
@@ -32,6 +39,7 @@ async def store_messages(event):
 
 @client.on(events.NewMessage(pattern=r'^rtag$'))
 async def rtag_handler(event):
+    """اجرای تگ گروهی"""
     group_id = event.chat_id
     sender_id = event.sender_id
 
@@ -43,8 +51,8 @@ async def rtag_handler(event):
         return
 
     rtag_active[group_id] = True
-
     count = 0
+
     for message in reversed(group_messages[group_id]):
         if not rtag_active.get(group_id, False):
             await event.reply("🚫 فرایند تگ متوقف شد.")
@@ -65,6 +73,7 @@ async def rtag_handler(event):
 
 @client.on(events.NewMessage(pattern=r'^stop$'))
 async def stop_handler(event):
+    """متوقف کردن فرآیند تگ و حذف پیام‌های ربات"""
     group_id = event.chat_id
     sender_id = event.sender_id
 
@@ -84,6 +93,7 @@ async def stop_handler(event):
 
 @client.on(events.NewMessage(pattern=r'^del$'))
 async def del_handler(event):
+    """حذف لیست کاربران تگ شده"""
     group_id = event.chat_id
     sender_id = event.sender_id
 
@@ -98,6 +108,7 @@ async def del_handler(event):
 
 @client.on(events.NewMessage(pattern=r'^promote$'))
 async def promote_handler(event):
+    """اضافه کردن ادمین جدید"""
     if event.is_reply:
         reply_msg = await event.get_reply_message()
         new_admin_id = reply_msg.sender_id
@@ -108,6 +119,7 @@ async def promote_handler(event):
 
 @client.on(events.NewMessage(pattern=r'^settext$'))
 async def settext_handler(event):
+    """تغییر متن جوین شو"""
     global join_text
     if event.is_reply:
         reply_msg = await event.get_reply_message()
@@ -118,6 +130,7 @@ async def settext_handler(event):
 
 @client.on(events.NewMessage(pattern=r'^help$'))
 async def help_handler(event):
+    """نمایش راهنما"""
     help_text = (
         "📌 **دستورات ربات:**\n"
         "🔹 `rtag` - تگ کردن پیام‌های کاربران\n"
@@ -129,7 +142,8 @@ async def help_handler(event):
     )
     await event.reply(help_text)
 
-async def main():
+async def run_client():
+    """اجرای کلاینت تلگرام"""
     await client.start(phone_number)
     me = await client.get_me()
     admins.add(me.id)
@@ -139,7 +153,22 @@ async def main():
             await fetch_previous_messages(dialog.id)
 
     print("✅ ربات در حال اجرا است...")
-
     await client.run_until_disconnected()
 
-client.loop.run_until_complete(main())
+# اجرای Telethon در یک ترد جداگانه
+def start_telethon():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_client())
+
+threading.Thread(target=start_telethon, daemon=True).start()
+
+# راه‌اندازی وب‌سرور فیک برای Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+# اجرای وب سرور روی پورت 10000
+app.run(host="0.0.0.0", port=10000)
