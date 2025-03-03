@@ -2,3 +2,4 @@ telethon
 asyncio
 configparser
 flask
+requests
