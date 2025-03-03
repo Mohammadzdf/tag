@@ -1,6 +1,8 @@
 import configparser
 import asyncio
 import threading
+import time
+import requests
 from flask import Flask
 from telethon import TelegramClient, events
 
@@ -147,12 +149,6 @@ async def run_client():
     await client.start(phone_number)
     me = await client.get_me()
     admins.add(me.id)
-
-    async for dialog in client.iter_dialogs():
-        if dialog.is_group:
-            await fetch_previous_messages(dialog.id)
-
-    print("✅ ربات در حال اجرا است...")
     await client.run_until_disconnected()
 
 # اجرای Telethon در یک ترد جداگانه
@@ -169,6 +165,20 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "Bot is running!"
+
+# تابع برای ارسال درخواست به خود سرور هر ۳۰ ثانیه
+def keep_awake():
+    url = "https://tag-1.onrender.com"  # لینک وب سرور در Render (جایگزین کن)
+    while True:
+        try:
+            requests.get(url)
+            print("✅ Ping sent to prevent shutdown")
+        except Exception as e:
+            print(f"⚠️ Ping failed: {e}")
+        time.sleep(30)  # هر ۳۰ ثانیه درخواست ارسال شود
+
+# اجرای self-ping در یک ترد جداگانه
+threading.Thread(target=keep_awake, daemon=True).start()
 
 # اجرای وب سرور روی پورت 10000
 app.run(host="0.0.0.0", port=10000)
